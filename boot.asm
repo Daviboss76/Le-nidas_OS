@@ -6,6 +6,8 @@ section .text
     dd - (0x1BADB002 + 0x00)   ; Checksum
 
 global _start
+global load_page_directory
+global enable_paging
 global isr33
 global isr44
 extern kernel_main
@@ -43,4 +45,15 @@ gdt_flush:
     mov ss, ax
     jmp 0x08:.flush     ; Far jump para recarregar Code Segment (0x08)
 .flush:
+    ret
+
+load_page_directory:
+    mov eax, [esp + 4]  ; Endereço do page_directory passado por parâmetro
+    mov cr3, eax        ; Carrega o ponteiro base no CR3
+    ret
+
+enable_paging:
+    mov eax, cr0
+    or eax, 0x80000000  ; Ativa o Bit 31 (PG - Paging Enable)
+    mov cr0, eax
     ret
