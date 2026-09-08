@@ -1,12 +1,25 @@
-# 📖 Documentação Técnica da API do Kernel — leonidas_OS (v1.0)
+# 📖 Documentação Técnica da API do Kernel — Le-nidas OS (v1.8 Jucilene)
 
 **Arquitetura Target:** `i686-pc-none-elf` (x86 32-bit Protected Mode / Ring 0)  
 **Compiladores Suportados:** Clang / LLVM (Termux / Linux)  
-**Linker:** `ld.lld` (LLVM Linker)
+**Linker:** `ld.lld` (LLVM Linker)  
 
 ---
 
-## 🛠️ 1. Núcleo e Inicialização (`init.h`)
+## 🔐 1. Gerenciador de Autenticação (`auth.h`)
+
+Módulo responsável pela identificação, cadastro e controle de sessão de usuários no sistema.
+
+### `void auth_prompt_login(void)`
+* **Descrição:** Executa a rotina interativa de login/cadastro no terminal VGA. Se nenhum usuário estiver ativo no sistema, solicita a criação do primeiro usuário e senha (com mascaramento por asteriscos `*`). Se já houver usuário cadastrado, valida as credenciais informadas contra os dados da sessão.
+* **Mecanismo Interno:** Utiliza leitura controlada do buffer de teclado (`get_single_key`) para evitar repetição acidental de caracteres.
+
+### `void auth_get_current_user(void)`
+* **Descrição:** Imprime no console o nome do usuário autenticado no formato `usuario@lenidas-os`. Caso não haja sessão ativa, exibe `root@lenidas-os (desconectado)`.
+
+---
+
+## 🛠️ 2. Núcleo e Inicialização (`init.h`)
 
 ### `void kernel_init_all(void)`
 * **Descrição:** Inicializa os subsistemas essenciais do sistema na ordem correta de dependência de hardware.
@@ -14,100 +27,65 @@
   1. Limpeza do buffer gráfico VGA (`vga_clear`).
   2. Configuração da Tabela Global de Descritores (`gdt_init`).
   3. Remapeamento das IRQs no Controlador de Interrupções (`pic_remap`).
-  4. Configuração da IDT (`idt_init`) e registro da IRQ1 (Teclado).
+  4. Configuração da IDT (`idt_init`) e registro da IRQ1 (Teclado) e IRQ12 (Mouse).
   5. Inicialização do Gerenciador de Heap (`memory_init`).
   6. Ativação global das interrupções da CPU (`sti`).
-  7. Carga e execução dos módulos dinâmicos ELF (`modules_init`).
-  8. Inicialização do controlador EHCI, Mouse PS/2 e Paginação de Memória (`paging_init`).
+  7. Carga de módulos dinâmicos ELF (`modules_init`).
+  8. Inicialização do controlador EHCI, suporte AC97 e Paginação (`paging_init`).
 
 ---
 
-## 🖥️ 2. Interface de Vídeo VGA (`vga.h`)
+## 🖥️ 3. Interface de Vídeo VGA (`vga.h`)
 
-O driver opera no modo de texto 80x25 mapeado diretamente no endereço físico `0xB8000`.
+O driver opera no modo de texto 80x25 mapeado no endereço físico `0xB8000`.
 
 ### `void vga_clear(void)`
-* **Descrição:** Limpa a tela inteira preenchendo os caracteres com espaços e aplica a cor padrão (texto branco sobre fundo preto).
+* **Descrição:** Limpa a tela preenchendo com espaços e aplica a cor padrão.
 
 ### `void vga_putchar(char c, uint8_t color)`
-* **Descrição:** Imprime um único caractere no cursor atual e avança a posição de escrita.
-* **Parâmetros:**
-  * `c`: Caractere ASCII a ser impresso.
-  * `color`: Byte de atributo VGA contendo cor de fundo e texto. Exemplo: `0x0F` (Branco brilhante).
+* **Descrição:** Imprime um caractere na posição atual do cursor.
 
 ### `void vga_puts(const char *str)`
-* **Descrição:** Imprime uma string terminada em nulo (`\0`) no console. Suporta quebra de linha (`\n`).
+* **Descrição:** Imprime uma string terminada em nulo (`\0`).
 
 ### `void vga_backspace(void)`
-* **Descrição:** Apaga o caractere imediatamente anterior ao cursor atual e recua a posição em 1 coluna.
+* **Descrição:** Remove o caractere anterior e recua o cursor em uma coluna.
 
 ---
 
-## 🧠 3. Gerenciamento de Memória (`memory.h`)
+## 🧠 4. Gerenciamento de Memória (`memory.h`)
 
-Gerencia a alocação de memória dinâmica no Heap a partir do endereço físico `0x100000` (1MB).
+Gerencia a alocação de memória dinâmica no Heap a partir de `0x100000` (1MB).
 
 ### `void memory_init(void)`
-* **Descrição:** Inicializa os ponteiros de controle e o mapa de blocos do Heap do kernel.
+* **Descrição:** Inicializa os ponteiros de controle e o mapa de blocos do Heap.
 
 ### `void *kmalloc(size_t size)`
-* **Descrição:** Reservará um bloco contíguo de bytes no Heap.
-* **Parâmetros:** `size` — Quantidade de bytes solicitada.
-* **Retorno:** Ponteiro `void*` para o bloco reservado ou `NULL` em caso de falta de memória.
-
----
-
-## 🧩 4. Carregador de Módulos Dinâmicos LKM (`elf_loader.h`)
-
-Responsável por interpretar, realocar e executar arquivos objeto no formato ELF32 (`.o`) em tempo de execução.
-
-### `int load_module(uint8_t *module_data)`
-* **Descrição:** Lê o cabeçalho ELF, aloca espaço na memória via `kmalloc` para as seções `.text`, `.data` e `.bss`, resolve a tabela de símbolos contra o mapa do kernel (`kernel_symbols`) via realocação `R_386_32` e `R_386_PC32`, e executa a função de entrada `module_init()`.
-* **Parâmetros:** `module_data` — Ponteiro para o buffer contendo os bytes brutos do arquivo objeto `.o`.
-* **Retorno:** `0` em caso de sucesso; valor negativo em caso de falha de validação ou erro de realocação.
-
-### `void modules_init(void)`
-* **Descrição:** Função utilitária que invoca o carregador para processar os módulos embutidos no binário durante a inicialização.
+* **Descrição:** Aloca um bloco contíguo de bytes no Heap.
 
 ---
 
 ## 📁 5. Sistema de Arquivos LeoFiles (`leofiles.h`)
 
-Gerenciador de arquivos residente na RAM para registro e organização de arquivos do sistema.
-
 ### `void leofiles_format(void)`
-* **Descrição:** Inicializa e limpa a tabela de diretórios do sistema LeoFiles.
+* **Descrição:** Formata e limpa a tabela de diretórios residente em RAM.
 
 ### `int leofiles_create(const char *name, uint32_t size)`
-* **Descrição:** Cria uma entrada de arquivo no diretório do sistema.
+* **Descrição:** Cria uma entrada de arquivo na tabela.
 
 ### `int leofiles_remove(const char *name)`
-* **Descrição:** Remove a entrada de um arquivo existente.
+* **Descrição:** Remove uma entrada existente.
 
 ### `void leofiles_list(void)`
-* **Descrição:** Itera pela tabela de arquivos e imprime os nomes diretamente na tela VGA.
+* **Descrição:** Lista os arquivos cadastrados na tela.
 
 ---
 
-## ⚙️ 6. Escalonador de Tarefas (`kernel.c`)
+## ⚙️ 6. Escalonador de Tarefas (`scheduler.h`)
 
 ### `void scheduler_init(void)`
 * **Descrição:** Registra a lista de tarefas iniciais no escalonador.
 
 ### `void scheduler_yield(void)`
-* **Descrição:** Alterna cooperativamente a execução para a próxima tarefa ativa da fila (Round-Robin).
-
----
-
-## 💻 7. Guia para Desenvolver um Módulo Dinâmico
-
-Para criar um novo módulo dinâmico em C compatível com o carregador do **leonidas_OS**:
-
-1. Crie o arquivo fonte `meu_modulo.c`:
-```c
-extern void vga_puts(const char *str);
-
-void module_init(void) {
-    vga_puts("[MODULO] Meu modulo customizado executou com sucesso!\n");
-}
+* **Descrição:** Alterna a execução cooperativa para a próxima tarefa (*Round-Robin*).
 
