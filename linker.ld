@@ -4,20 +4,26 @@ SECTIONS
 {
     . = 0x100000;
 
-    .text : {
-        *(.text)
+    .text : ALIGN(4K)
+    {
+        *(.multiboot)
+        *(.text*)
     }
 
-    .rodata : {
-        *(.rodata)
+    .rodata : ALIGN(4K)
+    {
+        *(.rodata*)
     }
 
-    .data : {
-        *(.data)
+    .data : ALIGN(4K)
+    {
+        *(.data*)
     }
 
-    .bss : {
-        *(.bss)
+    .bss : ALIGN(4K)
+    {
+        *(COMMON)
+        *(.bss*)
     }
 }
 
