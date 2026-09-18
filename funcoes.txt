@@ -1,0 +1,104 @@
+./drivers/AC97.c:29:static inline uint8_t inb(uint16_t port) {
+./drivers/AC97.c:35:static inline void outb(uint16_t port, uint8_t val) {
+./drivers/AC97.c:39:static inline uint16_t inw(uint16_t port) {
+./drivers/AC97.c:45:static inline void outw(uint16_t port, uint16_t val) {
+./drivers/AC97.c:49:static inline uint32_t inl(uint16_t port) {
+./drivers/AC97.c:55:static inline void outl(uint16_t port, uint32_t val) {
+./drivers/AC97.c:60:static int pci_find_ac97(void) {
+./drivers/AC97.c:89:int ac97_init(void) {
+./drivers/AC97.c:104:void ac97_play_tone(uint32_t freq_hz, uint32_t duration_ms) {
+./drivers/RTC.c:7:static inline uint8_t inb(uint16_t port) {
+./drivers/RTC.c:13:static inline void outb(uint16_t port, uint8_t val) {
+./drivers/RTC.c:18:static uint8_t get_rtc_register(int reg) {
+./drivers/RTC.c:24:static int get_update_in_progress_flag(void) {
+./drivers/RTC.c:30:static void u8_to_2digits(uint8_t val, char *str) {
+./drivers/RTC.c:35:void rtc_read_datetime(rtc_time_t *time) {
+./drivers/RTC.c:61:void rtc_format_datetime(const rtc_time_t *time, char *out_str) {
+./drivers/ehci.c:6:void ehci_init(uint32_t mmio_base) {
+./drivers/gdt.c:9:static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+./drivers/gdt.c:21:void gdt_init(void) {
+./drivers/idt.c:7:void outb(uint16_t port, uint8_t val) {
+./drivers/idt.c:11:uint8_t inb(uint16_t port) {
+./drivers/idt.c:17:void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
+./drivers/idt.c:25:void idt_init(void) {
+./drivers/keyboard.c:12:char kbd_getchar(void) {
+./drivers/mouse.c:12:static void mouse_wait(uint8_t type) {
+./drivers/mouse.c:25:static void mouse_write(uint8_t write) {
+./drivers/mouse.c:32:static uint8_t mouse_read(void) {
+./drivers/mouse.c:37:void mouse_handler(void) {
+./drivers/mouse.c:79:void mouse_init(void) {
+./drivers/mouse_gfx.c:7:void draw_mouse_cursor(int x, int y) {
+./drivers/pic.c:5:void pic_remap(void) {
+./drivers/pic.c:31:void pic_send_eoi(uint8_t irq) {
+./drivers/pic.c:38:void pic_unmask_irq(uint8_t irq) {
+./drivers/vbe_glass.c:6:void vbe_init(uint32_t lfb_addr) {
+./drivers/vbe_glass.c:10:void vbe_flip(void) {
+./drivers/vbe_glass.c:14:uint32_t blend_pixel(uint32_t bg, uint32_t fg, uint8_t alpha) {
+./drivers/vbe_glass.c:24:void vbe_draw_rect_alpha(int x, int y, int w, int h, uint32_t color, uint8_t alpha) {
+./drivers/vbe_glass.c:37:void vbe_render_glass_window(const window_t* win) {
+./drivers/vga.c:10:static void scroll(void) {
+./drivers/vga.c:22:void vga_clear(void) {
+./drivers/vga.c:29:void vga_putchar(char c, uint8_t color) {
+./drivers/vga.c:38:void vga_puts(const char *str) {
+./drivers/vga.c:42:void vga_backspace(void) {
+./fs/leofiles_core.c:10:int fs_strcmp(const char *a, const char *b) {
+./fs/leofiles_core.c:15:void fs_strcpy(char *dest, const char *src) {
+./fs/leofiles_core.c:19:uint16_t find_free_block(void) {
+./fs/leofiles_core.c:26:void leofiles_format(void) {
+./fs/leofiles_ops.c:12:int leofiles_create_in_dir(uint16_t dir_block, const char *name, uint8_t is_dir) {
+./fs/leofiles_ops.c:32:int leofiles_create(const char *name, uint8_t is_dir) {
+./fs/leofiles_ops.c:36:int leofiles_write(const char *name, const char *data, uint32_t size) {
+./fs/leofiles_ops.c:64:int leofiles_read(const char *name, char *buffer, uint32_t size) {
+./fs/leofiles_ops.c:85:int leofiles_remove(const char *name) {
+./fs/leofiles_ops.c:103:void leofiles_list(void) {
+./fs/leofiles_vfs.c:14:static uint16_t find_dir_block(uint16_t parent_block, const char *name) {
+./fs/leofiles_vfs.c:25:void leofiles_init_tree(void) {
+./fs/leofiles_vfs.c:48:uint16_t leofiles_get_programas_block(void) {
+./kernel/auth.c:17:static char get_single_key(void) {
+./kernel/auth.c:28:static void read_input_line(char* buf, int max_len, uint8_t mask_stars) {
+./kernel/auth.c:57:static int str_cmp(const char* a, const char* b) {
+./kernel/auth.c:62:static void str_copy(char* dest, const char* src) {
+./kernel/auth.c:66:void auth_prompt_login(void) {
+./kernel/auth.c:107:void auth_get_current_user(void) {
+./kernel/gui_desktop.c:22:void gui_desktop_init(uint32_t lfb_addr) {
+./kernel/gui_desktop.c:29:void gui_desktop_render(void) {
+./kernel/gui_desktop.c:69:void gui_desktop_handle_mouse_click(int mouse_x, int mouse_y, uint8_t left_click) {
+./kernel/init.c:23:void kernel_init_all(void) {
+./kernel/kernel.c:11:void keyboard_isr_handler(void) {
+./kernel/kernel.c:17:void kernel_main(void) {
+./kernel/scheduler.c:6:void scheduler_init(void) {
+./kernel/scheduler.c:14:int scheduler_add_task(uint32_t id, task_func_t func) {
+./kernel/scheduler.c:26:void scheduler_yield(void) {
+./kernel/shell.c:25:static int str_equals(const char* s1, const char* s2) {
+./kernel/shell.c:33:static int str_starts_with(const char *str, const char *prefix) {
+./kernel/shell.c:42:static void shell_puts(const char* str) {
+./kernel/shell.c:48:static void print_dec(uint32_t val) {
+./kernel/shell.c:63:static void print_hex(uint32_t val) {
+./kernel/shell.c:72:static inline uint8_t inb(uint16_t port) {
+./kernel/shell.c:78:static inline void outb(uint16_t port, uint8_t val) {
+./kernel/shell.c:82:static void sys_reboot(void) {
+./kernel/shell.c:92:void shell_init(void) {
+./kernel/shell.c:100:void shell_execute(const char* cmd) {
+./kernel/shell.c:254:void shell_handle_key(char c) {
+./kernel/splash.c:3:static inline void outb(uint16_t port, uint8_t val) {
+./kernel/splash.c:8:static void set_vga_mode_13h(void) {
+./kernel/splash.c:36:void splash_clear(uint8_t color) {
+./kernel/splash.c:43:void splash_draw_pixel(int x, int y, uint8_t color) {
+./kernel/splash.c:50:static void draw_rect(int x, int y, int width, int height, uint8_t color) {
+./kernel/splash.c:58:void splash_show(void) {
+./kernel/tui_desktop.c:13:static inline uint16_t vga_entry(unsigned char ch, uint8_t color) {
+./kernel/tui_desktop.c:17:void tui_desktop_start(void) {
+./kernel/window_manager.c:8:void window_manager_init(void) {
+./kernel/window_manager.c:17:void window_focus(int window_id) {
+./kernel/window_manager.c:26:int window_create(int x, int y, int w, int h, const char* title, uint32_t bg_color, uint8_t alpha) {
+./kernel/window_manager.c:49:void window_manager_draw_all(void) {
+./kernel/window_manager.c:57:void window_manager_handle_mouse(int mouse_x, int mouse_y, uint8_t buttons) {
+./mm/memory.c:9:void memory_init(void) {
+./mm/memory.c:13:void* kmalloc(size_t size) {
+./mm/memory.c:36:void *memset(void *dest, int val, unsigned int n) {
+./mm/memory.c:44:size_t memory_get_used(void) {
+./mm/paging.c:12:void paging_init(void) {
+./modules/elf_loader.c:20:static uint32_t find_kernel_symbol(const char *name) {
+./modules/elf_loader.c:30:int load_module(uint8_t *module_data) {
+./modules/elf_loader.c:118:void modules_init(void) {
+./modules/hello_mod.c:3:void module_init(void) {

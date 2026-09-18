@@ -1,4 +1,4 @@
-#include "AC97.h"
+#include <stdint.h>
 
 // Registradores do Barramento PCI
 #define CONFIG_ADDRESS 0xCF8
@@ -16,15 +16,18 @@
 typedef struct {
     uint32_t pointer;  // Endereço físico do buffer de áudio
     uint16_t samples;  // Número de amostras (máx 65535)
-    uint16_t flags;    // Bit 15: Interrupt on Completion (IOC), Bit 14: Buffer Underrun (BUP)
+    uint16_t flags;    // Bit 15: Interrupt on Completion (IOC)
 } __attribute__((packed)) ac97_bdl_entry_t;
 
 static uint16_t nabmbar = 0; // Native Audio Bus Master Base Address
 static uint16_t nambar  = 0; // Native Audio Mixer Base Address
 
-// Buffers alinhados estaticamente para DMA
+// Buffer BDL alinhado
 static ac97_bdl_entry_t bdl[32] __attribute__((aligned(16)));
-static int16_t pcm_buffer[2048] __attribute__((aligned(16)));
+
+// Símbolos gerados pelo objcopy do arquivo audio_hino.bin
+extern char _binary_audio_hino_bin_start[];
+extern char _binary_audio_hino_bin_end[];
 
 static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
@@ -56,7 +59,7 @@ static inline void outl(uint16_t port, uint32_t val) {
     __asm__ __volatile__ ("outl %0, %1" : : "a"(val), "Nd"(port));
 }
 
-// Varredura PCI para encontrar a placa de som AC'97 (Vendor ID: 0x8086, Device ID: 0x2415)
+// Varredura PCI para encontrar a placa de som AC'97
 static int pci_find_ac97(void) {
     for (uint32_t bus = 0; bus < 256; bus++) {
         for (uint32_t dev = 0; dev < 32; dev++) {
@@ -64,16 +67,13 @@ static int pci_find_ac97(void) {
             outl(CONFIG_ADDRESS, addr);
             uint32_t vendor_device = inl(CONFIG_DATA);
 
-            // Procure pelo controlador Intel AC'97 (usado por padrão no QEMU)
             if ((vendor_device & 0xFFFF) == 0x8086 && ((vendor_device >> 16) & 0xFFFF) == 0x2415) {
-                // Lê NAMBAR (BAR0) e NABMBAR (BAR1)
                 outl(CONFIG_ADDRESS, addr | 0x10);
                 nambar = inl(CONFIG_DATA) & ~1;
 
                 outl(CONFIG_ADDRESS, addr | 0x14);
                 nabmbar = inl(CONFIG_DATA) & ~1;
 
-                // Ativa Bus Mastering e I/O Space no PCI Command Register
                 outl(CONFIG_ADDRESS, addr | 0x04);
                 uint32_t cmd = inl(CONFIG_DATA);
                 outl(CONFIG_ADDRESS, addr | 0x04);
@@ -88,50 +88,60 @@ static int pci_find_ac97(void) {
 
 int ac97_init(void) {
     if (!pci_find_ac97()) {
-        return 0; // Placa AC'97 não encontrada
+        return 0;
     }
 
-    // Define o volume máximo para o Mixer (Master e PCM Volume)
-    outw(nambar + AC97_MASTER_VOL, 0x0000); // 0 = Volume máximo (sem atenuação)
+    // Configura o volume principal e PCM no mixer (sem Mute / volume alto)
+    outw(nambar + AC97_MASTER_VOL, 0x0000);
     outw(nambar + AC97_PCM_VOL, 0x0000);
-
-    // Reseta o controlador Bus Master Output
-    outb(nabmbar + AC97_PO_CR, 0x02); // Reset bit
+    
+    // Reseta o controlador Bus Master de saída PCM (PCM Out)
+    outb(nabmbar + AC97_PO_CR, 0x02);
 
     return 1;
 }
 
-void ac97_play_tone(uint32_t freq_hz, uint32_t duration_ms) {
+// Função que toca a gravação original convertida via DMA do AC'97
+void ac97_tocar_hino(void) {
     if (!nabmbar) return;
 
-    uint32_t sample_rate = 48000;
-    uint32_t total_samples = 2048;
+    uint32_t audio_start = (uint32_t)_binary_audio_hino_bin_start;
+    uint32_t audio_len = (uint32_t)(_binary_audio_hino_bin_end - _binary_audio_hino_bin_start);
 
-    // Gera onda quadrada PCM 16-bit estéreo
-    uint32_t period = sample_rate / freq_hz;
-    for (uint32_t i = 0; i < total_samples; i++) {
-        int16_t sample = ((i % period) < (period / 2)) ? 8000 : -8000;
-        pcm_buffer[i] = sample;
+    // Configura o Sample Rate para 22050 Hz no registrador do AC'97 (0x2C)
+    outw(nambar + 0x2C, 22050);
+
+    uint32_t bytes_enviados = 0;
+    uint32_t bloco_max = 65530; // Limite máximo de samples por descritor BDL
+
+    while (bytes_enviados < audio_len) {
+        uint32_t tamanho_atual = audio_len - bytes_enviados;
+        if (tamanho_atual > bloco_max) tamanho_atual = bloco_max;
+
+        // Configura o descritor DMA BDL
+        bdl[0].pointer = audio_start + bytes_enviados;
+        bdl[0].samples = (uint16_t)(tamanho_atual / 2); // 16-bit por sample (2 bytes)
+        bdl[0].flags = 0x8000;                         // IOC (Interrupt on Completion)
+
+        // Envia o descritor para os registradores de DMA do AC'97
+        outl(nabmbar + AC97_PO_BDBAR, (uint32_t)&bdl[0]);
+        outb(nabmbar + AC97_PO_LVI, 0);
+        outb(nabmbar + AC97_PO_CR, 0x01); // Inicia a reprodução (RUN = 1)
+
+        // Aguarda a reprodução deste bloco terminar na controladora
+        while ((inb(nabmbar + 0x16) & 0x01) == 0);
+
+        bytes_enviados += tamanho_atual;
     }
 
-    // Configura a tabela de descritores DMA (BDL)
-    bdl[0].pointer = (uint32_t)pcm_buffer;
-    bdl[0].samples = total_samples;
-    bdl[0].flags = 0x8000; // Interrupt / End of list flag
-
-    // Aponta o BDBAR para a nossa tabela BDL
-    outl(nabmbar + AC97_PO_BDBAR, (uint32_t)&bdl[0]);
-
-    // Define o índice final (LVI) como 0
-    outb(nabmbar + AC97_PO_LVI, 0);
-
-    // Inicia a reprodução enviando a flag RUN (bit 0) para o Control Register
-    outb(nabmbar + AC97_PO_CR, 0x01);
-
-    // Delay simples proporcional à duração (loop de espera)
-    for (volatile uint32_t d = 0; d < duration_ms * 10000; d++);
-
-    // Para a reprodução de áudio
+    // Para o canal PCM Out após reproduzir todo o áudio
     outb(nabmbar + AC97_PO_CR, 0x00);
+}
+
+    // Compatibilidade para o init.c que ainda chama ac97_play_tone
+void ac97_play_tone(uint32_t freq, uint32_t duration) {
+    (void)freq;
+    (void)duration;
+    ac97_tocar_hino();
 }
 

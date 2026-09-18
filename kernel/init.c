@@ -12,6 +12,7 @@
 #include "AC97.h"
 #include "splash.h"
 #include "leofiles.h"
+#include "rtl8139.h"
 
 // Declarações externas
 extern void isr33(void);
@@ -73,6 +74,7 @@ void kernel_init_all(void) {
         vga_puts("[-] Dispositivo AC'97 nao encontrado.\n");
     }
 
-    splash_show();
+        vga_puts("[-] inicializado rede rtl8139.\n");
+        rtl8139_init();
 }
 

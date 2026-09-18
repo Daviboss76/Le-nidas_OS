@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include "shell.h"
 #include "kernel.h"
 #include "vga.h"
@@ -5,6 +6,8 @@
 #include "RTC.h"
 #include "auth.h"
 #include <stdint.h>
+#include "../autoreparar/autoreparar.h"
+
 
 // Interfaces externas do sistema
 extern void gui_desktop_init(uint32_t lfb_addr);
@@ -13,6 +16,11 @@ extern void leofiles_list(void);
 extern int leofiles_create(const char *name, uint8_t is_dir);
 extern int leofiles_remove(const char *name);
 extern uint16_t leofiles_get_programas_block(void);
+extern int ota_download_and_save_kernel(void);
+extern void basic_rodar_arquivo(char *nome_arquivo);
+extern void ac97_tocar_hino(void);
+extern void notepad_abrir(const char *nome_arquivo);
+extern size_t memory_get_used(void); // Função de uso de RAM do kernel
 
 // Disco virtual do LeoFiles
 extern uint8_t virtual_disk[2048][LEO_BLOCK_SIZE];
@@ -92,7 +100,7 @@ static void sys_reboot(void) {
 void shell_init(void) {
     buffer_idx = 0;
     current_color = 0x0A;
-    shell_puts("\nLe-nidas OS Shell v2.0\n");
+    shell_puts("\nLe-nidas OS Shell v3.0 - Lendaria Edition\n");
     shell_puts("Digite 'help' para listar os comandos disponiveis.\n\n");
     shell_puts("lenidas> ");
 }
@@ -116,12 +124,16 @@ void shell_execute(const char* cmd) {
         shell_puts("  programas  - Busca binarios em /system/usr/programas\n");
         shell_puts("  echo <msg> - Imprime uma mensagem na tela\n");
         shell_puts("  mem        - Exibe informacoes do mapa de memoria\n");
+        shell_puts("  ram        - Exibe o uso atual de RAM do sistema\n");
         shell_puts("  malloc     - Teste de alocador de memoria do kernel\n");
         shell_puts("  gui        - Inicia o VBE Glass Desktop\n");
         shell_puts("  tui        - Inicia o TUI Desktop\n");
         shell_puts("  uptime     - Exibe informacoes de execucao do sistema\n");
         shell_puts("  color <n>  - Altera a cor do texto do terminal (1-5)\n");
         shell_puts("  whoami     - Exibe o usuario ativo no Shell\n");
+        shell_puts("  hino       - Tocar o grito de garra do leonidas\n");
+        shell_puts("  faxina     - Executa o faxineiro de RAM do auto-reparo\n");
+        shell_puts("  autorepair - Dispara o teste do subsistema de auto-reparo\n");
     }
     else if (str_equals(cmd, "login") == 0) {
         auth_prompt_login();
@@ -176,7 +188,65 @@ void shell_execute(const char* cmd) {
         shell_puts("==================================================\n\n");
     }
     else if (str_equals(cmd, "version") == 0) {
-        shell_puts("Le-nidas OS v1.8 jusilene edit (x86 Baremetal Target) - LeoFiles VFS Enabled\n");
+        shell_puts("       _nnnn_\n");
+        shell_puts("      DooMooPi\n");
+        shell_puts("     |====|====|\n");
+        shell_puts("     |    |    |     Le-nidas OS v3.0 - Lendaria Edition\n");
+        shell_puts("     |____|____|     Escola Estadual Leonidas Ribeiro de Magalhaes\n");
+        shell_puts("      //||\\\\||\n");
+        shell_puts("     // || ||||\n");
+        shell_puts("    //  ||  ||||\n");
+    }
+    else if (str_starts_with(cmd, "bloco ")) {
+    // Pega o nome do arquivo que vem depois de "bloco " (ex: bloco net_escola.bas)
+    const char *nome_arquivo = cmd + 6;
+    
+    // Remove espaços extras se houver
+    while (*nome_arquivo == ' ') nome_arquivo++;
+    
+    if (*nome_arquivo == '\0') {
+        shell_puts("[-] Uso incorreto. Exemplo: bloco net_escola\n");
+    } else {
+        shell_puts("[+] Abrindo Bloco de Notas para: ");
+        shell_puts(nome_arquivo);
+        shell_puts("\n");
+        
+        // Chama a função do editor nativo que criamos
+        notepad_abrir(nome_arquivo);
+    }
+}
+
+    else if (str_equals(cmd, "faxina") == 0) {
+        autoreparar_faxineiro_ram();
+    }
+    else if (str_equals(cmd, "autorepair") == 0) {
+        autoreparar_tratar_erro(ERRO_LEOFILES_CORROMPIDO);
+    }
+    else if (str_equals(cmd, "hino") == 0) {
+        shell_puts("[AC97] Tocando o Grito de Guerra do Le-nidas OS...\n");
+        ac97_tocar_hino();
+    }
+    else if (str_starts_with(cmd, "basic ")) {
+        const char *filename = cmd + 6;
+        basic_rodar_arquivo((char *)filename);
+    }
+    else if (str_starts_with(cmd, "escrever ")) {
+        const char *args = cmd + 9;
+        char filename[32];
+        int i = 0;
+
+        while (*args != ' ' && *args != '\0' && i < 31) {
+            filename[i++] = *args++;
+        }
+        filename[i] = '\0';
+
+        if (*args == ' ') args++;
+
+        if (leofiles_write(filename, (char *)args, 256) == 0) {
+            shell_puts("[+] Codigo gravado no arquivo!\n");
+        } else {
+            shell_puts("[-] Erro ao gravar no LeoFiles.\n");
+        }
     }
     else if (str_equals(cmd, "programas") == 0) {
         uint16_t prog_block = leofiles_get_programas_block();
@@ -205,12 +275,58 @@ void shell_execute(const char* cmd) {
         shell_puts(cmd + 5);
         shell_puts("\n");
     }
+    else if (str_starts_with(cmd, "abrir ")) {
+    const char *filename = cmd + 6;
+    char buffer[1024]; // Buffer para armazenar o conteúdo do arquivo lido
+    
+    // Tenta ler o arquivo do LeoFiles
+    int bytes_lidos = leofiles_read(filename, buffer, sizeof(buffer) - 1);
+    
+    if (bytes_lidos >= 0) {
+        buffer[bytes_lidos] = '\0'; // Garante o fim da string se for texto
+        
+        shell_puts("[+] Lendo arquivo: ");
+        shell_puts(filename);
+        shell_puts("\n-----------------------------------\n");
+        shell_puts(buffer);
+        shell_puts("\n-----------------------------------\n");
+        shell_puts("[+] Fim do arquivo. Total de bytes: ");
+        print_dec(bytes_lidos);
+        shell_puts("\n");
+    } else {
+        shell_puts("[-] Erro: Arquivo nao encontrado ou falha ao ler.\n");
+    }
+}
+
     else if (str_equals(cmd, "mem") == 0) {
         shell_puts("Mapa de Memoria do Kernel:\n");
         shell_puts("  Base do Kernel: 0x00100000\n");
         shell_puts("  LeoFiles VFS  : ");
         print_hex((uint32_t)virtual_disk);
         shell_puts("\n  Estrutura BlockTable: 2048 blocos alocados\n");
+    }
+    else if (str_equals(cmd, "ram") == 0) {
+        size_t bytes_usados = memory_get_used();
+        size_t kb_usados = bytes_usados / 1024;
+        size_t mb_usados = kb_usados / 1024;
+
+        shell_puts("\n=== STATUS DE USO DE RAM (HEAP) ===\n");
+        shell_puts("  Uso em Bytes : ");
+        print_dec(bytes_usados);
+        shell_puts(" bytes\n");
+        shell_puts("  Uso em KB    : ");
+        print_dec(kb_usados);
+        shell_puts(" KB\n");
+        shell_puts("  Uso em MB    : ");
+        print_dec(mb_usados);
+        shell_puts(" MB\n");
+        
+        if (mb_usados >= 8) {
+            shell_puts("  [!] Alerta: Memoria elevada! Digite 'faxina'.\n");
+        } else {
+            shell_puts("  [+] Estado: Memoria em niveis estaveis.\n");
+        }
+        shell_puts("=====================================\n\n");
     }
     else if (str_equals(cmd, "malloc") == 0) {
         shell_puts("Alocando bloco de memoria de teste...\n");
@@ -244,6 +360,19 @@ void shell_execute(const char* cmd) {
         else if (c == '5') current_color = 0x0F; // Branco
         shell_puts("Cor do terminal alterada.\n");
     }
+    else if (str_equals(cmd, "update")) {
+        shell_puts("[OTA] Conectando ao driver RTL8139 para checar atualizacoes...\n");
+        shell_puts("[OTA] Repositorio Alvo: Daviboss76/Le-nidas_OS (main)\n");
+
+        int st = ota_download_and_save_kernel();
+
+        if (st != 0) {
+            shell_puts("[-] OTA: Nao foi possivel concluir o download remoto. Verifique a conexao.\n");
+        } else {
+            shell_puts("[OTA] Sucesso! Nova versao salva como 'kernel_new.bin' no LeoFiles.\n");
+            shell_puts("[OTA] Reinicie o sistema para aplicar a mudanca.\n");
+        }
+    }
     else {
         shell_puts("Comando nao reconhecido: ");
         shell_puts(cmd);
@@ -259,7 +388,7 @@ void shell_handle_key(char c) {
         buffer_idx = 0;
         shell_puts("lenidas> ");
     }
-    else if (c == '\b' || c == 127) { // Suporta Backspace (ASCII 8 e 127)
+    else if (c == '\b' || c == 127) {
         if (buffer_idx > 0) {
             buffer_idx--;
             vga_putchar('\b', current_color);

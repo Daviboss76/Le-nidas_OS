@@ -21,31 +21,50 @@ static uint16_t find_dir_block(uint16_t parent_block, const char *name) {
     return 0;
 }
 
-// Inicializa as pastas padrão do sistema
+// Inicializa as pastas padrão do sistema de forma segura (verifica se já existem)
 void leofiles_init_tree(void) {
-    // 1. Criar pastas no diretório Raiz (bloco 1)
-    leofiles_create_in_dir(1, "system", 1);
-    leofiles_create_in_dir(1, "boot", 1);
-    leofiles_create_in_dir(1, "root", 1);
-
+    // 1. Garantir/Localizar /system, /boot, /root na Raiz (bloco 1)
     sys_dir_block = find_dir_block(1, "system");
+    if (sys_dir_block == 0) {
+        leofiles_create_in_dir(1, "system", 1);
+        sys_dir_block = find_dir_block(1, "system");
+    }
 
-    // 2. Criar /system/usr
+    if (find_dir_block(1, "boot") == 0) {
+        leofiles_create_in_dir(1, "boot", 1);
+    }
+    if (find_dir_block(1, "root") == 0) {
+        leofiles_create_in_dir(1, "root", 1);
+    }
+
+    // 2. Garantir/Localizar /system/usr
     if (sys_dir_block != 0) {
-        leofiles_create_in_dir(sys_dir_block, "usr", 1);
         usr_dir_block = find_dir_block(sys_dir_block, "usr");
+        if (usr_dir_block == 0) {
+            leofiles_create_in_dir(sys_dir_block, "usr", 1);
+            usr_dir_block = find_dir_block(sys_dir_block, "usr");
+        }
     }
 
-    // 3. Criar /system/usr/programas
+    // 3. Garantir/Localizar /system/usr/programas
     if (usr_dir_block != 0) {
-        leofiles_create_in_dir(usr_dir_block, "programas", 1);
         prog_dir_block = find_dir_block(usr_dir_block, "programas");
+        if (prog_dir_block == 0) {
+            leofiles_create_in_dir(usr_dir_block, "programas", 1);
+            prog_dir_block = find_dir_block(usr_dir_block, "programas");
+        }
     }
 
-    vga_puts("[+] Arvore /system /boot /usr /programas /root montada com sucesso!\n");
+    vga_puts("[+] Arvore /system /boot /usr /programas /root verificada e montada com sucesso!\n");
 }
 
 uint16_t leofiles_get_programas_block(void) {
+    // Caso a variável ainda esteja zerada, tenta buscar dinamicamente na árvore
+    if (prog_dir_block == 0) {
+        uint16_t s = find_dir_block(1, "system");
+        uint16_t u = s ? find_dir_block(s, "usr") : 0;
+        prog_dir_block = u ? find_dir_block(u, "programas") : 0;
+    }
     return prog_dir_block;
 }
 
