@@ -1,141 +1,170 @@
-// kernel/tui_desktop.c
-#include "tui_desktop.h"
-#include "leofiles.h"
+#include <stdint.h>
+#include <stddef.h>
 #include "vga.h"
+#include "leofiles.h"
+#include "RTC.h"
 
-#define VGA_MEM ((volatile uint16_t*)0xB8000)
-#define COLS 80
-#define ROWS 25
+extern char kbd_getchar(void);
+extern void shell_init(void);
+// Supõe que o seu shell tem uma função que roda o loop dele e retorna quando o usuário digita 'exit'
+// Se o seu shell atual chama shell_init() e já entra em loop, veja a nota abaixo.
+extern void shell_run(void); 
+extern void basic_rodar_arquivo(const char *nome);
 
-extern uint8_t virtual_disk[2048][LEO_BLOCK_SIZE];
+#define LARGURA 80
+#define ALTURA 25
+#define MEM_VGA ((volatile uint16_t*)0xB8000)
 
-// Função auxiliar para combinar o caractere ASCII e a cor VGA
-static inline uint16_t vga_entry(unsigned char ch, uint8_t color) {
-    return (uint16_t)ch | ((uint16_t)color << 8);
+#define COR_DESKTOP     0x1F  
+#define COR_BARRA       0x30  
+#define COR_JANELA_HDR  0x70  
+#define COR_JANELA_BODY 0x1E  
+#define COR_MENU_SEL    0x2F  
+#define COR_SOMBRA      0x08  
+
+static uint16_t buffer_tela[LARGURA * ALTURA];
+
+static int menu_aberto = 0;
+static int item_selecionado = 0;
+static int wallpaper_index = 0;
+static const char *wallpapers[] = {"padrao.img", "praise.img", "retro.img"};
+
+static void put_char_buffer(int x, int y, char c, uint8_t cor) {
+    if (x >= 0 && x < LARGURA && y >= 0 && y < ALTURA) {
+        buffer_tela[y * LARGURA + x] = (uint16_t)c | ((uint16_t)cor << 8);
+    }
 }
 
-void tui_desktop_start(void) {
-    // Atributos de Cores VGA (Fundo + Texto)
-    uint8_t bg_white   = 0xF0; // Papel de parede branco, texto preto
-    uint8_t win_bg     = 0x70; // Janela cinza claro
-    uint8_t title_bg   = 0x8F; // Barra de título cinza escuro
-    uint8_t btn_close  = 0x4F; // Botão fechar vermelho
-    uint8_t btn_min    = 0x8F; // Botão minimizar cinza
-    
-    // Cores da Barra de Tarefas
-    uint8_t bar_yellow = 0xE0; // Bloco amarelo
-    uint8_t bar_btn    = 0xA0; // Botão LEONIDAS verde/amarelo
-    uint8_t bar_blue   = 0x10; // Bloco azul central
-    uint8_t bar_green  = 0x2F; // Bloco verde (relógio)
-
-    // 1. Papel de parede em branco
-    for (int y = 0; y < ROWS; y++) {
-        for (int x = 0; x < COLS; x++) {
-            VGA_MEM[y * COLS + x] = vga_entry(' ', bg_white);
-        }
+static void put_string_buffer(int x, int y, const char *str, uint8_t cor) {
+    while (*str && x < LARGURA) {
+        put_char_buffer(x, y, *str, cor);
+        str++;
+        x++;
     }
+}
 
-    // 2. Janela Quadrada dos Programas (Posição: X=5, Y=3, L=30, A=14)
-    int wx = 5, wy = 3, ww = 30, wh = 14;
-
-    // Fundo da Janela
-    for (int i = 0; i < wh; i++) {
-        for (int j = 0; j < ww; j++) {
-            VGA_MEM[(wy + i) * COLS + (wx + j)] = vga_entry(' ', win_bg);
-        }
-    }
-
-    // Bordas da Janela
-    for (int i = 0; i < ww; i++) {
-        VGA_MEM[wy * COLS + (wx + i)] = vga_entry(196, win_bg);
-        VGA_MEM[(wy + wh - 1) * COLS + (wx + i)] = vga_entry(196, win_bg);
-    }
-    for (int i = 0; i < wh; i++) {
-        VGA_MEM[(wy + i) * COLS + wx] = vga_entry(179, win_bg);
-        VGA_MEM[(wy + i) * COLS + (wx + ww - 1)] = vga_entry(179, win_bg);
-    }
-    VGA_MEM[wy * COLS + wx] = vga_entry(218, win_bg);
-    VGA_MEM[wy * COLS + (wx + ww - 1)] = vga_entry(191, win_bg);
-    VGA_MEM[(wy + wh - 1) * COLS + wx] = vga_entry(192, win_bg);
-    VGA_MEM[(wy + wh - 1) * COLS + (wx + ww - 1)] = vga_entry(217, win_bg);
-
-    // Barra de Título
-    for (int j = 1; j < ww - 1; j++) {
-        VGA_MEM[(wy + 1) * COLS + (wx + j)] = vga_entry(' ', title_bg);
-    }
-
-    // Texto da Barra de Título
-    const char *title = "Programas";
-    for (int i = 0; title[i]; i++) {
-        VGA_MEM[(wy + 1) * COLS + (wx + 2 + i)] = vga_entry(title[i], title_bg);
-    }
-
-    // Botões Minimizar [-] e Fechar [X]
-    VGA_MEM[(wy + 1) * COLS + (wx + ww - 6)] = vga_entry('[', title_bg);
-    VGA_MEM[(wy + 1) * COLS + (wx + ww - 5)] = vga_entry('-', btn_min);
-    VGA_MEM[(wy + 1) * COLS + (wx + ww - 4)] = vga_entry(']', title_bg);
-    VGA_MEM[(wy + 1) * COLS + (wx + ww - 3)] = vga_entry('[', title_bg);
-    VGA_MEM[(wy + 1) * COLS + (wx + ww - 2)] = vga_entry('X', btn_close);
-
-    // 3. Listagem dinâmica de arquivos de /system/usr/programas
-    uint16_t prog_block = leofiles_get_programas_block();
-    int line_y = wy + 3;
-
-    if (prog_block != 0) {
-        struct LeoDirEntry *entries = (struct LeoDirEntry*)virtual_disk[prog_block];
-        for (uint32_t i = 0; i < (LEO_BLOCK_SIZE / sizeof(struct LeoDirEntry)); i++) {
-            if (entries[i].used) {
-                // Desenha ícone de programa e o nome
-                VGA_MEM[line_y * COLS + (wx + 2)] = vga_entry(16, win_bg); // Ícone '>'
-                for (int c = 0; entries[i].name[c] != '\0'; c++) {
-                    VGA_MEM[line_y * COLS + (wx + 4 + c)] = vga_entry(entries[i].name[c], win_bg);
-                }
-                line_y += 2;
-                if (line_y >= wy + wh - 1) break;
+static void desenhar_janela(int x, int y, int w, int h, const char *titulo, uint8_t cor_body) {
+    for (int i = 1; i <= h; i++) {
+        for (int j = 2; j <= 2; j++) {
+            int sx = x + w + j - 2;
+            int sy = y + i;
+            if (sx < LARGURA && sy < ALTURA) {
+                uint16_t atual = buffer_tela[sy * LARGURA + sx];
+                buffer_tela[sy * LARGURA + sx] = (atual & 0x00FF) | (COR_SOMBRA << 8);
             }
         }
     }
 
-    // 4. Barra de Tarefas Inferior (Linhas 22 e 23)
-    // Seção Amarela (Esquerda - Botão LEONIDAS)
-    for (int x = 2; x < 25; x++) {
-        VGA_MEM[22 * COLS + x] = vga_entry(' ', bar_yellow);
-        VGA_MEM[23 * COLS + x] = vga_entry(' ', bar_yellow);
-    }
-    // Cantos arredondados na barra de tarefas (caracteres ASCII estendidos)
-    VGA_MEM[22 * COLS + 2] = vga_entry('(', bar_yellow);
-    VGA_MEM[23 * COLS + 2] = vga_entry('(', bar_yellow);
+    for (int i = 0; i < w; i++) put_char_buffer(x + i, y, ' ', COR_JANELA_HDR);
+    put_string_buffer(x + 2, y, titulo, COR_JANELA_HDR);
 
-    // Botão "LEONIDAS"
-    const char *btn_txt = " LEONIDAS ";
-    for (int i = 0; btn_txt[i]; i++) {
-        VGA_MEM[22 * COLS + (4 + i)] = vga_entry(btn_txt[i], bar_btn);
-        VGA_MEM[23 * COLS + (4 + i)] = vga_entry(' ', bar_btn);
+    for (int line = 1; line < h; line++) {
+        for (int col = 0; col < w; col++) {
+            if (col == 0 || col == w - 1) {
+                put_char_buffer(x + col, y + line, '|', cor_body);
+            } else if (line == h - 1) {
+                put_char_buffer(x + col, y + line, '-', cor_body);
+            } else {
+                put_char_buffer(x + col, y + line, ' ', cor_body);
+            }
+        }
+    }
+}
+
+static void tui_flush(void) {
+    for (int i = 0; i < LARGURA * ALTURA; i++) {
+        MEM_VGA[i] = buffer_tela[i];
+    }
+}
+
+static void tui_desenhar_desktop(void) {
+    for (int i = 0; i < LARGURA * ALTURA; i++) {
+        buffer_tela[i] = (uint16_t)' ' | (COR_DESKTOP << 8);
     }
 
-    // Seção Azul (Meio)
-    for (int x = 25; x < 50; x++) {
-        VGA_MEM[22 * COLS + x] = vga_entry(' ', bar_blue);
-        VGA_MEM[23 * COLS + x] = vga_entry(' ', bar_blue);
+    put_string_buffer(26, 10, "=== LE-NIDAS OS DESKTOP ===", COR_DESKTOP);
+    put_string_buffer(22, 12, "Sistema Operacional 32-bit em Modo Texto", COR_DESKTOP);
+    put_string_buffer(20, 22, "[M] Menu  |  [W/S] Navegar  |  [ENTER] Executar", COR_DESKTOP);
+}
+
+static void tui_desenhar_barra(void) {
+    rtc_time_t hora;
+    char hora_str[32];
+    rtc_read_datetime(&hora);
+    rtc_format_datetime(&hora, hora_str);
+
+    for (int i = 0; i < LARGURA; i++) {
+        put_char_buffer(i, 24, ' ', COR_BARRA);
     }
 
-    // Seção Verde (Direita - Relógio e Data)
-    for (int x = 50; x < 78; x++) {
-        VGA_MEM[22 * COLS + x] = vga_entry(' ', bar_green);
-        VGA_MEM[23 * COLS + x] = vga_entry(' ', bar_green);
+    if (menu_aberto) {
+        put_string_buffer(1, 24, " [ INICIAR (ABERTO) ] ", COR_MENU_SEL);
+    } else {
+        put_string_buffer(1, 24, " [ INICIAR ] ", COR_BARRA);
     }
-    VGA_MEM[22 * COLS + 77] = vga_entry(')', bar_green);
-    VGA_MEM[23 * COLS + 77] = vga_entry(')', bar_green);
 
-    // Texto de Hora e Data
-    const char *time_str = "HORA 00:00";
-    const char *date_str = "30/08/26";
+    put_string_buffer(60, 24, hora_str, COR_BARRA);
+}
 
-    for (int i = 0; time_str[i]; i++) {
-        VGA_MEM[22 * COLS + (55 + i)] = vga_entry(time_str[i], bar_green);
-    }
-    for (int i = 0; date_str[i]; i++) {
-        VGA_MEM[23 * COLS + (56 + i)] = vga_entry(date_str[i], bar_green);
+static void tui_desenhar_menu(void) {
+    if (!menu_aberto) return;
+
+    int x = 2, y = 14, w = 34, h = 9;
+    desenhar_janela(x, y, w, h, " Menu Iniciar ", COR_JANELA_BODY);
+
+    uint8_t cor_opt0 = (item_selecionado == 0) ? COR_MENU_SEL : COR_JANELA_BODY;
+    uint8_t cor_opt1 = (item_selecionado == 1) ? COR_MENU_SEL : COR_JANELA_BODY;
+    uint8_t cor_opt2 = (item_selecionado == 2) ? COR_MENU_SEL : COR_JANELA_BODY;
+
+    put_string_buffer(x + 2, y + 2, " 1. Terminal Shell          ", cor_opt0);
+    put_string_buffer(x + 2, y + 4, " 2. Trocar Wallpaper (.img)  ", cor_opt1);
+    put_string_buffer(x + 2, y + 6, " 3. Executar Programa BASIC ", cor_opt2);
+}
+
+void tui_desktop_start(void) {
+    while (1) {
+        tui_desenhar_desktop();
+        tui_desenhar_menu();
+        tui_desenhar_barra();
+        tui_flush();
+
+        char tecla = kbd_getchar();
+
+        if (tecla == 'w' || tecla == 'W') {
+            if (menu_aberto && item_selecionado > 0) item_selecionado--;
+        }
+        else if (tecla == 's' || tecla == 'S') {
+            if (menu_aberto && item_selecionado < 2) item_selecionado++;
+        }
+        else if (tecla == 'm' || tecla == 'M' || tecla == ' ') {
+            menu_aberto = !menu_aberto;
+        }
+        else if (tecla == '\n' || tecla == '\r') {
+            if (menu_aberto) {
+                if (item_selecionado == 0) {
+                    // Fecha o menu antes de abrir o shell
+                    menu_aberto = 0; 
+                    
+                    // Limpa a tela de verdade para o terminal respirar sozinho
+                    vga_clear();
+                    
+                    // Roda o shell e TRAVA o desktop aqui até o usuário sair do shell
+                    // (Certifique-se de chamar a função que roda o loop do seu shell, ex: shell_run ou shell_init)
+                    shell_init(); 
+
+                    // Quando o usuário der exit no shell, o fluxo volta pra cá e redesenha o desktop limpo
+                }
+                else if (item_selecionado == 1) {
+                    wallpaper_index = (wallpaper_index + 1) % 3;
+                }
+                else if (item_selecionado == 2) {
+                    menu_aberto = 0;
+                    vga_clear();
+                    basic_rodar_arquivo("teste.bas");
+                    // Pausa opcional para ver o resultado do BASIC antes de voltar ao desktop
+                }
+            }
+        }
     }
 }
 
